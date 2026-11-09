@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: erp-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: erp_user
+      POSTGRES_PASSWORD: erp_secret_password
+      POSTGRES_DB: erp_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - erp_pg_data:/var/lib/postgresql/data
+      - ./backend/migrations/000001_init_accounting_schema.up.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    command: >
+      postgres -c max_connections=200
+               -c shared_buffers=512MB
+               -c effective_cache_size=1536MB
+               -c work_mem=16MB
+               -c maintenance_work_mem=128MB
+               -c min_wal_size=1GB
+               -c max_wal_size=4GB
+               -c checkpoint_completion_target=0.9
+               -c wal_buffers=16MB
+
+volumes:
+  erp_pg_data:
+    driver: local
