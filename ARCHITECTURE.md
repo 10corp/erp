@@ -28,9 +28,9 @@ Our architecture breaks completely free from the monolithic approach:
 
 ---
 
-## 2. The Hybrid Architectural Synthesis: Hexya + ERPNext + Tryton
+## 2. The Hybrid Architectural Synthesis: Hexya + Tryton + iDempiere + ERPNext
 
-Our system is engineered by synthesizing the best elements of the top 3 open-source ERP systems, eliminating their individual flaws:
+Our system is engineered by synthesizing the best elements of the world's top open-source ERP systems, eliminating their individual flaws:
 
 ```
 +-----------------------------------------------------------------------------------------+
@@ -39,19 +39,28 @@ Our system is engineered by synthesizing the best elements of the top 3 open-sou
 | 1. Hexya Engine Layer:                                                                  |
 |    - High-throughput Go routing and sub-millisecond execution.                          |
 |    - Bitmask RBAC Security (Read, Write, Unlink, Post).                                 |
-|    - Goroutine Background Worker loops.                                                 |
+|    - Goroutine Background Worker loops & concurrent SSE dispatch.                       |
 |                                                                                         |
-| 2. ERPNext Schema Layer (DocType):                                                      |
-|    - Single-table DocType schema (replaces Odoo's convoluted product.template/product). |
-|    - Declarative JSON-based field definitions mapped directly to typed Go structs.      |
-|    - Clean foreign-key Link fields & dynamic JSONB custom attributes.                   |
-|                                                                                         |
-| 3. Tryton Financial Engine Layer:                                                       |
-|    - Strict GAAP/IFRS State Machine: Draft (0) -> Submitted (1) -> Cancelled (2).       |
-|    - Absolute Immutability: Posted GL entries can NEVER be updated or deleted.          |
-|    - Reversal Contra Postings only for corrections.                                     |
+| 2. Tryton Financial & Double-Entry Stock Foundation:                                    |
+|    - Immutable append-only general ledgers (account_account, account_move, account_move_line)|
+|    - Double-Entry Stock Movements (stock_location, stock_move):                         |
+|      Moves inventory symmetrically: Supplier Location -> Warehouse -> Customer Location |
+|    - Universal Legal Entity: party.party & multi-tax identifiers (BIN, TIN, VAT).       |
+|    - Recursive Multi-Branch Tree Hierarchy (company.company / vw_company_hierarchy).    |
 |    - Zero-Float Policy: Pure shopspring/decimal & NUMERIC(19, 6).                       |
-|    - Invariant: SUM(Debit Base) == SUM(Credit Base) enforced at DB & Go levels.         |
+|                                                                                         |
+| 3. iDempiere Multi-Tenant & Multi-Branch Enterprise Isolation:                          |
+|    - Dual-column multi-tenancy on every transactional table:                            |
+|      * tenant_id (iDempiere AD_Client_ID - Complete SaaS / Group Client Isolation)       |
+|      * company_id (iDempiere AD_Org_ID - Multi-Branch / Subsidiary Operating Isolation) |
+|                                                                                         |
+| 4. ERPNext Document Lifecycle (docstatus) & Business Subsystems:                        |
+|    - Lightweight Document Immutability Engine:                                          |
+|      * docstatus = 0 (Draft - fully editable, zero ledger impact)                       |
+|      * docstatus = 1 (Submitted/Posted - immutable, triggers GL and Stock movements)     |
+|      * docstatus = 2 (Cancelled - never deleted, appends explicit contra reversals)     |
+|    - Clean declarative field design for HR, Leave Applications & Salary Slip Payroll    |
+|    - Clean Manufacturing Bill of Materials (BOM) & Work Orders                          |
 +-----------------------------------------------------------------------------------------+
 ```
 
@@ -103,28 +112,147 @@ Our system is engineered by synthesizing the best elements of the top 3 open-sou
 
 ---
 
-## 4. Repository Layout
+## 5. Double-Entry Inventory & Perpetual COGS Engine
+
+1. **Tryton Double-Entry Locations:**
+   - No stock appears or vanishes without explicit origin and destination:
+     - Inflow (Purchase Receipt): `Supplier (Virtual)` $\to$ `Internal Warehouse`
+     - Outflow (Delivery Note): `Internal Warehouse` $\to$ `Customer (Virtual)`
+     - Transfer: `Source Warehouse` $\to$ `Destination Warehouse`
+2. **Moving Average Costing ($O(1)$ Time Complexity):**
+   - On Inflow:
+     $$\text{New Valuation Rate} = \frac{(\text{Current Qty} \times \text{Current Rate}) + (\text{Incoming Qty} \times \text{Incoming Rate})}{\text{Current Qty} + \text{Incoming Qty}}$$
+   - On Outflow:
+     $$\text{COGS Amount} = \text{Delivered Qty} \times \text{Valuation Rate}$$
+3. **Perpetual Inventory Auto-Posting to `gl_entries`:**
+   - Every stock dispatch atomically commits:
+     - **Debit:** `5010 - Cost of Goods Sold (COGS)` (Amount: COGS)
+     - **Credit:** `1030 - Stock In Hand (Inventory Asset)` (Amount: COGS)
+4. **Row-Level Locking Concurrency Guard:**
+   - Delivery validation locks balance with `SELECT ... FOR UPDATE` on `item_warehouse_balances`.
+   - Strict `ErrInsufficientStock` returned if requested quantity exceeds available stock, completely eliminating negative stock anomalies.
+
+---
+
+## 6. Multimodal Intelligent Document Processing (IDP) & SSE
+
+1. **Async Job Queue Ingestion (`FOR UPDATE SKIP LOCKED`):**
+   - Invoices or receipts uploaded via `POST /api/v1/idp/upload` are enqueued into `background_jobs` table.
+   - Go worker pool atomically locks tasks and prevents duplicate processing across instances.
+2. **Real-time SSE Streaming (`/api/v1/idp/stream`):**
+   - The Go server pushes live event steps to the React client:
+     $$\text{analyzing\_document} \longrightarrow \text{extracting\_line\_items} \longrightarrow \text{validating\_math} \longrightarrow \text{completed}$$
+3. **Zero-Float Gemini Structured Extraction & Math Guard:**
+   - All amounts extracted strictly as **Strings** (`ResponseMIMEType: "application/json"`).
+   - Go executes mathematical verification:
+     $$\sum (\text{item.qty} \times \text{item.unit\_price}) + \text{tax\_total} == \text{grand\_total}$$
+   - Any anomaly sets `math_mismatch_warning: true` with calculated variance.
+4. **Human-in-the-Loop Verification:**
+   - Documents are **never** posted directly to the general ledger. They pre-fill into the context Slide Drawer as **Draft (0)**, allowing accountant inspection before one-click atomic posting.
+
+---
+
+## 7. Claude 3.5 Sonnet Natural Language Action Brain (Command+K Engine)
+
+1. **Natural Language to Action Translation:**
+   - Receives business instructions typed into the global Command+K spotlight or spoken via voice.
+   - Converts unstructured language into typed `ERPAction` JSON payloads.
+2. **Action Taxonomies:**
+   - `open_drawer`: Opens context Slide Drawer for `PaymentEntry`, `SalesInvoice`, or `DeliveryNote` with pre-filled entity parameters.
+   - `navigate`: Switches active view in 0ms (`dashboard`, `ledger`, `invoices`).
+   - `query_doctype`: Queries overdue invoices or unposted vouchers dynamically.
+3. **Example Workflow:**
+   - User Input: *"Show me overdue invoices for Acme and draft receipt"*
+   - AI Output:
+     ```json
+     {
+       "type": "open_drawer",
+       "target": "PaymentEntry",
+       "parameters": {
+         "party_name": "Acme",
+         "payment_type": "Receive",
+         "filter_overdue_invoices": true,
+         "auto_reconcile": true
+       },
+       "ui_message": "Identified intent: Customer Receipt for Acme. Opened Payment Drawer with auto-reconciliation enabled.",
+       "confidence": 0.98
+     }
+     ```
+
+---
+
+## 8. Repository Layout
 
 ```
 erp/
 ├── backend/                  # Go backend micro-core
 │   ├── cmd/
 │   │   ├── server/           # HTTP & SSE API server
-│   │   └── worker/           # Background job worker
+│   │   └── seed/             # Database migrator & seed automation
 │   ├── internal/
-│   │   ├── accounting/       # Double-entry posting & ledger logic
-│   │   ├── doctype/          # DocType schema registry & validation
-│   │   ├── queue/            # SKIP LOCKED background queue
-│   │   ├── sse/              # SSE event broadcaster
-│   │   └── ai/               # AI integrations (Gemini & Claude)
-│   ├── migrations/           # Database migration scripts
+│   │   ├── accounting/       # Double-entry posting, Sub-ledger guard & Trial Balance
+│   │   ├── doctype/          # DocType registry (Sales, Purchase, Payments, Salary Slip, BOM)
+│   │   ├── hr/               # Human Resources, Leaves, Salary Structures & Payroll
+│   │   ├── inventory/        # Moving average ($O(1)$) costing & stock ledgers
+│   │   ├── module/           # Pluggable ERPNext-style module registry
+│   │   ├── party/            # Tryton universal party (party.party, identifiers, branches)
+│   │   ├── security/         # Core user management, bitmask RBAC, lockout & JWT
+│   │   ├── queue/            # SKIP LOCKED background worker pool
+│   │   ├── sse/              # Server-Sent Events (SSE) broadcaster
+│   │   └── ai/               # Gemini 1.5 Flash IDP & Claude 3.5 Sonnet Action Brain
+│   ├── migrations/           # PostgreSQL migrations (000001 through 000010)
 │   └── go.mod
-├── frontend/                 # React SPA
+├── frontend/                 # Refine + React 18 + Ant Design 5
 │   ├── src/
-│   │   ├── components/       # Drawer, CommandK, AG Grid wrappers
-│   │   ├── modules/          # Accounting, Stock, Buying, Selling
-│   │   └── hooks/            # SSE and API hooks
+│   │   ├── components/       # SlideDrawer (IDP), CommandPalette (Claude 3.5)
+│   │   ├── pages/            # Dashboard, GeneralLedger, TrialBalance, Parties, Users, HR Payroll
+│   │   ├── providers/        # Refine dataProvider (Go REST adapter) & authProvider
+│   │   └── App.tsx           # Refine routing, Active branch switcher, RBAC
 │   └── package.json
 ├── docker-compose.yml        # PostgreSQL container setup
 └── Makefile                  # Developer workflow automation
 ```
+
+---
+
+## 9. Tryton Universal Legal Entities & Multi-Branch Architecture
+
+### 9.1 The Five Pillars of Party & Multi-Branch Tenancy
+1. **`party.party` (`party_party`):** Universal legal entity representing Customers, Suppliers, Employees, or Internal Companies under a single unified table.
+2. **`party.identifier` (`party_identifier`):** Preserves statutory tax identification codes (BIN, TIN, VAT, NID, Trade License) with `is_primary` validation.
+3. **`party.address` & `party.contact_mechanism`:** Multi-address (Invoice vs Delivery) and multi-channel contacts (Email, Phone, WhatsApp) linked via UUID foreign keys.
+4. **`company.company` (`companies`):** Self-referential tree structure (`parent_id`) allowing unlimited multi-branch and subsidiary hierarchies.
+5. **Multi-Branch Hierarchy CTE (`vw_company_hierarchy`):** Recursive query computing branch lineage, root parentage, depth levels, and material path names.
+
+### 9.2 Sub-Ledger Integrity & Inter-Branch Clearing
+- **Sub-Ledger Invariant Trigger (`trg_validate_subledger_party`):** Strictly enforces that postings to Accounts Receivable (`1020`) and Accounts Payable (`2001`) must supply a non-null `party_id`.
+- **Inter-Branch Clearing Accounts (`1990` & `2990`):** Transfers between branches credit/debit reciprocal clearing accounts:
+  - Branch A transfers to Branch B: Branch A records `Due From Branch B (1990)`, Branch B records `Due To Branch A (2990)`.
+  - In Consolidated Trial Balance reporting, clearing accounts net out to `0.000000`, guaranteeing balance sheet integrity.
+
+---
+
+## 10. Refine Headless Dual-Panel Framework
+
+### 10.1 Refine Core Integration (`sources/refine`)
+- **Dual Panel Architecture:** Single unified application providing both high-density **Admin/CFO** management tools and streamlined **Operational / User** workflows.
+- **Dynamic Branch Switching:** Custom header dropdown switches active operating branch context in 0ms, purging query cache via `useInvalidate()` without page reloads.
+- **1-Click Role Switcher:** Login screen enables instant role emulation (Admin/CFO, Sales Officer, Visitor/Auditor) with pre-configured JWT claims and bitmask permissions.
+- **60 FPS AG Grid Virtualization:** Handles general ledger views with 100,000+ entries using virtual DOM row rendering.
+
+---
+
+## 11. Human Resources & Payroll Subsystem
+
+### 11.1 ERPNext Fields + Tryton docstatus Financial Engine
+- **Salary Slip Lifecycle:**
+  - `docstatus = 0 (Draft)`: Unposted; allows adjusting base salary, house rent allowance (HRA), medical, conveyance, provident fund, and tax withholding.
+  - `docstatus = 1 (Submitted / Posted)`: Locks the slip and auto-posts balanced general ledger entries:
+    - **Dr 5020 (Operating Salary Expense):** Gross Pay
+    - **Cr 2010 (Salary Payable to Employee Bank):** Net Take-Home Pay
+    - **Cr 2020 (Tax & PF Withheld Liability):** Total Statutory Deductions
+  - `docstatus = 2 (Cancelled)`: Reverses the payroll slip without database row deletion by appending explicit contra reversal vouchers.
+- **Universal Employee Identity:**
+  - All employees (`company_employee`) are strictly linked to `party_party` via `party_id`. This allows an employee to also be a vendor/claimant for expense reimbursements without data duplication.
+- **Leave Management:**
+  - Standardized leave types (Annual, Casual, Sick) with manager approval lifecycle (`docstatus: 0 -> 1`).

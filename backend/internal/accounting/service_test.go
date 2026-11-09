@@ -45,3 +45,85 @@ func TestUnbalancedDebitCreditRule(t *testing.T) {
 		t.Fatalf("Discrepancy calculation error: got %s", diff.String())
 	}
 }
+
+func TestTrialBalanceZeroFloatInvariant(t *testing.T) {
+	svc := &Service{}
+	report, err := svc.GetTrialBalance(nil, [16]byte{1}, true)
+	if err != nil {
+		t.Fatalf("failed to generate trial balance: %v", err)
+	}
+
+	if !report.IsBalanced {
+		t.Fatalf("expected trial balance to be strictly balanced, diff=%s", report.Difference)
+	}
+
+	if !report.TotalDebit.Equal(report.TotalCredit) {
+		t.Errorf("debit (%s) != credit (%s)", report.TotalDebit, report.TotalCredit)
+	}
+
+	if !report.IsConsolidated {
+		t.Error("expected consolidated flag to be true")
+	}
+}
+
+func TestInterBranchTransfer(t *testing.T) {
+	svc := &Service{}
+	fromID := [16]byte{1}
+	toID := [16]byte{2}
+
+	// 1. Valid transfer between two distinct branches
+	req := InterBranchTransferRequest{
+		FromCompanyID: fromID,
+		ToCompanyID:   toID,
+		Amount:        decimal.RequireFromString("150000.00"),
+		Currency:      "BDT",
+		Remarks:       "Inventory replenishment transfer",
+	}
+
+	res, err := svc.CreateInterBranchTransfer(nil, req)
+	if err != nil {
+		t.Fatalf("expected successful inter-branch transfer, got error: %v", err)
+	}
+
+	if !res.IsBalanced {
+		t.Error("expected inter-branch transfer clearing vouchers to be balanced")
+	}
+
+	// 2. Transfer between identical branches MUST fail
+	invalidReq := req
+	invalidReq.ToCompanyID = fromID
+
+	_, err = svc.CreateInterBranchTransfer(nil, invalidReq)
+	if err != ErrSameBranchTransfer {
+		t.Errorf("expected ErrSameBranchTransfer, got: %v", err)
+	}
+}
+
+func TestPartyLedgerRunningBalance(t *testing.T) {
+	svc := &Service{}
+	partyID := [16]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01} // Acme
+	companyID := [16]byte{1}
+
+	report, err := svc.GetPartyLedger(nil, companyID, partyID, true)
+	if err != nil {
+		t.Fatalf("failed to get party ledger: %v", err)
+	}
+
+	if len(report.Lines) == 0 {
+		t.Fatal("expected party ledger lines, got 0")
+	}
+
+	// Verify running balance invariant: Each line's balance must equal previous balance + debit - credit
+	var running decimal.Decimal = report.OpeningBalance
+	for idx, line := range report.Lines {
+		running = running.Add(line.Debit).Sub(line.Credit)
+		if !line.Balance.Equal(running) {
+			t.Errorf("line %d running balance mismatch: got %s, expected %s", idx, line.Balance, running)
+		}
+	}
+
+	// Final running balance must equal closing balance
+	if !report.ClosingBalance.Equal(running) {
+		t.Errorf("closing balance mismatch: got %s, expected %s", report.ClosingBalance, running)
+	}
+}

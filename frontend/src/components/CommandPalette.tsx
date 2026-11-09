@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { Command } from 'cmdk';
-import { Search, PlusCircle, BookOpen, FileText, Cpu, TrendingUp } from 'lucide-react';
+import { Search, PlusCircle, BookOpen, FileText, Cpu, TrendingUp, Sparkles, CornerDownLeft } from 'lucide-react';
 
 interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelectAction: (action: string) => void;
+  onSelectAction: (action: string, payload?: any) => void;
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, onSelectAction }) => {
+  const [search, setSearch] = useState('');
+  const [isProcessingAI, setIsProcessingAI] = useState(false);
+
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if ((e.key === 'k' && (e.metaKey || e.ctrlKey))) {
@@ -23,6 +26,27 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
     document.addEventListener('keydown', down);
     return () => document.removeEventListener('keydown', down);
   }, [isOpen, onClose, onSelectAction]);
+
+  const handleExecuteAI = async () => {
+    if (!search.trim()) return;
+    setIsProcessingAI(true);
+    try {
+      const resp = await fetch('/api/v1/ai/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: search }),
+      });
+      if (resp.ok) {
+        const actionData = await resp.json();
+        onSelectAction('ai_action', actionData);
+        onClose();
+      }
+    } catch (err) {
+      console.error('Claude Action Brain call failed:', err);
+    } finally {
+      setIsProcessingAI(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -43,8 +67,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
     >
       <div
         style={{
-          width: '600px',
-          maxWidth: '90vw',
+          width: '640px',
+          maxWidth: '92vw',
           backgroundColor: '#1e293b',
           borderRadius: '12px',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
@@ -57,7 +81,15 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
           <div style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #334155' }}>
             <Search size={18} color="#94a3b8" style={{ marginRight: '10px' }} />
             <Command.Input
-              placeholder="Type a command, search accounts, or ask AI (e.g. 'new invoice', 'p&l')..."
+              value={search}
+              onValueChange={setSearch}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && search.length > 5) {
+                  e.preventDefault();
+                  handleExecuteAI();
+                }
+              }}
+              placeholder="Ask Claude AI or jump to... (e.g. 'Show me overdue invoices for Acme and draft receipt')"
               style={{
                 width: '100%',
                 background: 'transparent',
@@ -69,12 +101,48 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
               }}
               autoFocus
             />
+            {search.length > 3 && (
+              <button
+                onClick={handleExecuteAI}
+                disabled={isProcessingAI}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  backgroundColor: '#0284c7',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  marginLeft: '8px',
+                }}
+              >
+                <Sparkles size={13} />
+                <span>{isProcessingAI ? 'Thinking...' : 'Claude Action'}</span>
+              </button>
+            )}
           </div>
 
-          <Command.List style={{ maxHeight: '320px', overflowY: 'auto', padding: '8px' }}>
-            <Command.Empty style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
-              No matching commands or documents found.
+          <Command.List style={{ maxHeight: '340px', overflowY: 'auto', padding: '8px' }}>
+            <Command.Empty style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
+              <div>Press <b>Enter</b> to let Claude 3.5 Sonnet parse intent and execute action.</div>
             </Command.Empty>
+
+            {search.length > 3 && (
+              <Command.Group heading="🤖 Natural Language Intent Parser" style={{ padding: '6px 8px', fontSize: '11px', color: '#38bdf8', fontWeight: 600 }}>
+                <Command.Item
+                  onSelect={handleExecuteAI}
+                  style={{ ...itemStyle, backgroundColor: '#0f172a', border: '1px solid #0284c7' }}
+                >
+                  <Sparkles size={16} color="#38bdf8" style={{ marginRight: '10px' }} />
+                  <span>Execute natural language command: <i>"{search}"</i></span>
+                  <CornerDownLeft size={14} color="#64748b" style={{ marginLeft: 'auto' }} />
+                </Command.Item>
+              </Command.Group>
+            )}
 
             <Command.Group heading="⚡ Rapid Quick Actions" style={{ padding: '6px 8px', fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
               <Command.Item
@@ -103,6 +171,15 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
                 <span>Record Customer Payment (Forex Auto-Reconciled)</span>
                 <span style={badgeStyle}>PAY</span>
               </Command.Item>
+
+              <Command.Item
+                onSelect={() => { onSelectAction('new_delivery'); onClose(); }}
+                style={itemStyle}
+              >
+                <PlusCircle size={16} color="#06b6d4" style={{ marginRight: '10px' }} />
+                <span>Dispatch Delivery Note (Perpetual COGS Auto-Post)</span>
+                <span style={badgeStyle}>DN</span>
+              </Command.Item>
             </Command.Group>
 
             <Command.Group heading="📊 Reports & Ledgers" style={{ padding: '6px 8px', fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
@@ -120,17 +197,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
               >
                 <TrendingUp size={16} color="#a78bfa" style={{ marginRight: '10px' }} />
                 <span>Profit & Loss (CQRS Materialized View)</span>
-              </Command.Item>
-            </Command.Group>
-
-            <Command.Group heading="🤖 AI Brain Commands" style={{ padding: '6px 8px', fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
-              <Command.Item
-                onSelect={() => { onSelectAction('scan_receipt'); onClose(); }}
-                style={itemStyle}
-              >
-                <Cpu size={16} color="#f43f5e" style={{ marginRight: '10px' }} />
-                <span>Scan Receipt / Invoice PDF (Gemini 1.5 Flash IDP)</span>
-                <span style={{ ...badgeStyle, backgroundColor: '#831843' }}>AI</span>
               </Command.Item>
             </Command.Group>
           </Command.List>

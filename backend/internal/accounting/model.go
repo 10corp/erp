@@ -123,3 +123,75 @@ type CreateJournalEntryRequest struct {
 	Remarks     string             `json:"remarks"`
 	Lines       []JournalLineInput `json:"lines"`
 }
+
+// Trial Balance Reporting (Consolidated vs Standalone Branch)
+type TrialBalanceRow struct {
+	AccountID   uuid.UUID       `json:"account_id"`
+	AccountCode string          `json:"account_code"`
+	AccountName string          `json:"account_name"`
+	RootType    AccountRootType `json:"root_type"`
+	TotalDebit  decimal.Decimal `json:"total_debit"`
+	TotalCredit decimal.Decimal `json:"total_credit"`
+	NetDebit    decimal.Decimal `json:"net_debit"`
+	NetCredit   decimal.Decimal `json:"net_credit"`
+}
+
+type TrialBalanceReport struct {
+	CompanyID        uuid.UUID         `json:"company_id"`
+	CompanyName      string            `json:"company_name"`
+	IsConsolidated   bool              `json:"is_consolidated"`
+	IncludedBranches []string          `json:"included_branches"`
+	TotalDebit       decimal.Decimal   `json:"total_debit"`
+	TotalCredit      decimal.Decimal   `json:"total_credit"`
+	Difference       decimal.Decimal   `json:"difference"`
+	IsBalanced       bool              `json:"is_balanced"`
+	Lines            []TrialBalanceRow `json:"lines"`
+}
+
+// Inter-Branch Transactions (Due To / Due From Clearing Engine)
+type InterBranchTransferRequest struct {
+	FromCompanyID  uuid.UUID       `json:"from_company_id"`
+	ToCompanyID    uuid.UUID       `json:"to_company_id"`
+	AssetAccountID uuid.UUID       `json:"asset_account_id"`
+	Amount         decimal.Decimal `json:"amount"`
+	Currency       string          `json:"currency"`
+	Remarks        string          `json:"remarks"`
+}
+
+type InterBranchTransferResult struct {
+	SourceVoucherNo      string          `json:"source_voucher_no"`
+	DestinationVoucherNo string          `json:"destination_voucher_no"`
+	PostingDate          time.Time       `json:"posting_date"`
+	Amount               decimal.Decimal `json:"amount"`
+	Currency             string          `json:"currency"`
+	IsBalanced           bool            `json:"is_balanced"`
+	Status               string          `json:"status"`
+}
+
+// Party Ledger / Sub-Ledger Statement (Customer Aging & Supplier Statement)
+type PartyLedgerLine struct {
+	PostingDate time.Time       `json:"posting_date"`
+	VoucherType string          `json:"voucher_type"`
+	VoucherNo   string          `json:"voucher_no"`
+	AccountCode string          `json:"account_code"`
+	AccountName string          `json:"account_name"`
+	BranchName  string          `json:"branch_name"`
+	Debit       decimal.Decimal `json:"debit"`
+	Credit      decimal.Decimal `json:"credit"`
+	Balance     decimal.Decimal `json:"balance"` // Running Cumulative Balance
+	Remarks     string          `json:"remarks"`
+}
+
+type PartyLedgerReport struct {
+	PartyID        uuid.UUID         `json:"party_id"`
+	PartyCode      string            `json:"party_code"`
+	PartyName      string            `json:"party_name"`
+	CompanyID      uuid.UUID         `json:"company_id"`
+	CompanyName    string            `json:"company_name"`
+	IsConsolidated bool              `json:"is_consolidated"`
+	OpeningBalance decimal.Decimal   `json:"opening_balance"`
+	TotalDebit     decimal.Decimal   `json:"total_debit"`
+	TotalCredit    decimal.Decimal   `json:"total_credit"`
+	ClosingBalance decimal.Decimal   `json:"closing_balance"`
+	Lines          []PartyLedgerLine `json:"lines"`
+}
